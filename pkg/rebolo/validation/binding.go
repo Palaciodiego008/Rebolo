@@ -22,12 +22,80 @@ func Bind(r *http.Request, v interface{}) error {
 		return bindJSON(r, v)
 	}
 
-	// Parse form data (including multipart)
+	// Check if it's multipart (file upload)
+	if strings.Contains(contentType, "multipart/form-data") {
+		return bindMultipart(r, v)
+	}
+
+	// Parse form data
 	if err := r.ParseForm(); err != nil {
 		return err
 	}
 
 	return bindForm(r, v)
+}
+
+// bindMultipart binds multipart form data (including files) to struct
+func bindMultipart(r *http.Request, v interface{}) error {
+	// Parse multipart form (32MB max memory)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		return err
+	}
+
+	val := reflect.ValueOf(v)
+	if val.Kind() != reflect.Ptr {
+		return errors.New("bind target must be a pointer")
+	}
+
+	val = val.Elem()
+	if val.Kind() != reflect.Struct {
+		return errors.New("bind target must be a struct pointer")
+	}
+
+	typ := val.Type()
+
+	for i := 0; i < val.NumField(); i++ {
+		field := val.Field(i)
+		typeField := typ.Field(i)
+
+		// Skip unexported fields
+		if !field.CanSet() {
+			continue
+		}
+
+		// Get form tag or use lowercase field name
+		tag := typeField.Tag.Get("form")
+		if tag == "" {
+			tag = strings.ToLower(typeField.Name)
+		}
+
+		// Skip if tag is "-"
+		if tag == "-" {
+			continue
+		}
+
+		// Check if field is File type
+		if field.Type() == reflect.TypeOf(File{}) {
+			file, header, err := r.FormFile(tag)
+			if err != nil && err != http.ErrMissingFile {
+				return err
+			}
+			if file != nil {
+				field.Set(reflect.ValueOf(File{File: file, FileHeader: header}))
+			}
+			continue
+		}
+
+		// Get value from form (use FormValue for regular fields)
+		formValue := r.FormValue(tag)
+		if formValue != "" {
+			if err := setField(field, formValue); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // bindJSON binds JSON request body to struct
@@ -148,4 +216,3 @@ func BindAndValidate(r *http.Request, v interface{}) error {
 	}
 	return Validate(v)
 }
-

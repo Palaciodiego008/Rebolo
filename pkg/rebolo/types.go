@@ -30,6 +30,7 @@ type (
 	TestApp          = testing.TestApp
 	ValidationError  = validation.ValidationError
 	ValidationErrors = validation.ValidationErrors
+	File             = validation.File
 )
 
 // Function aliases for convenience

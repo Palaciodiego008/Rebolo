@@ -1,13 +1,12 @@
 package rebolo
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net/http"
-	
-	"github.com/Palaciodiego008/rebololang/pkg/rebolo/core"
+
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/adapters"
+	"github.com/Palaciodiego008/rebololang/pkg/rebolo/core"
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/ports"
 )
 
@@ -25,11 +24,11 @@ type ConfigAdapter struct {
 	data ports.ConfigData
 }
 
-func (c *ConfigAdapter) GetPort() string     { return c.data.Server.Port }
-func (c *ConfigAdapter) GetHost() string     { return c.data.Server.Host }
+func (c *ConfigAdapter) GetPort() string        { return c.data.Server.Port }
+func (c *ConfigAdapter) GetHost() string        { return c.data.Server.Host }
 func (c *ConfigAdapter) GetDatabaseURL() string { return c.data.Database.URL }
 func (c *ConfigAdapter) GetEnvironment() string { return c.data.App.Env }
-func (c *ConfigAdapter) IsHotReload() bool   { return c.data.Assets.HotReload }
+func (c *ConfigAdapter) IsHotReload() bool      { return c.data.Assets.HotReload }
 
 // New creates a new ReboloLang application
 func New() *Application {
@@ -39,12 +38,12 @@ func New() *Application {
 	if err != nil {
 		log.Printf("Failed to load config: %v", err)
 	}
-	
+
 	config := &ConfigAdapter{data: configData}
 	router := adapters.NewMuxRouter()
 	database := adapters.NewBunDatabase()
 	renderer := adapters.NewHTMLRenderer()
-	
+
 	// Connect database if configured
 	if config.GetDatabaseURL() != "" {
 		if err := database.ConnectWithDSN(config.GetDatabaseURL(), config.GetEnvironment() == "development"); err != nil {
@@ -53,14 +52,14 @@ func New() *Application {
 			log.Println("✅ Database connected successfully")
 		}
 	}
-	
+
 	// Create core app
 	coreApp := core.NewApp(config, router, database, renderer)
-	
+
 	// Add default middleware
 	coreApp.AddMiddleware(LoggingMiddleware)
 	coreApp.AddMiddleware(RecoveryMiddleware)
-	
+
 	app := &Application{
 		App:      coreApp,
 		config:   config,
@@ -68,7 +67,7 @@ func New() *Application {
 		database: database,
 		renderer: renderer,
 	}
-	
+
 	return app
 }
 
@@ -78,7 +77,7 @@ func (a *Application) Start() error {
 	if port == "" {
 		port = "3000"
 	}
-	
+
 	fmt.Printf("🚀 ReboloLang server starting on port %s\n", port)
 	return a.App.Start()
 }

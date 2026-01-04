@@ -1,13 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"io/fs"
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -15,127 +17,124 @@ import (
 
 var devConfig = DefaultDevConfig()
 
+// startDevServer starts the development server with hot reload
 func startDevServer() {
-	// Start Bun asset watcher
-	go startBunAssetPipeline()
+	fmt.Println("Starting ReboloLang development server...")
 
-	// Start Go server with hot reload
-	startGoServerWithReload()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		fmt.Println("\n🛑 Shutting down development server...")
+		cancel()
+	}()
+
+	// 1. Setup Bun.js and compile assets initially
+	setupBunAndAssets()
+
+	// 2. Start Bun watcher for assets (CSS/JS) in background
+	go watchAndCompileAssets(ctx)
+
+	// 3. Start Go server with hot reload for .go files
+	startGoServerWithHotReload(ctx)
 }
 
-func startBunAssetPipeline() {
-	if _, err := os.Stat("package.json"); os.IsNotExist(err) {
-		fmt.Println("📦 No package.json found, creating default Bun setup...")
-		createDefaultBunSetup()
+// setupBunAndAssets sets up Bun.js and compiles assets initially
+func setupBunAndAssets() {
+	// Check if Bun is installed
+	if !isBunInstalled() {
+		fmt.Println("🔧 Bun.js not found. Trying to use it from ~/.bun/bin...")
+
+		// Try to use Bun from home directory
+		homeDir, _ := os.UserHomeDir()
+		bunPath := filepath.Join(homeDir, ".bun", "bin", "bun")
+		if _, err := os.Stat(bunPath); err == nil {
+			// Add to PATH temporarily
+			os.Setenv("PATH", filepath.Dir(bunPath)+":"+os.Getenv("PATH"))
+		} else {
+			// Install Bun
+			fmt.Println("📥 Installing Bun.js...")
+			if err := installBun(); err != nil {
+				log.Printf("⚠️  Bun.js installation failed: %v", err)
+				log.Println("📝 Using fallback assets (direct copy of CSS/JS)")
+				createFallbackAssets()
+				return
+			}
+		}
 	}
 
-	// Install dependencies
-	fmt.Println("📦 Installing Bun dependencies...")
-	if err := runCommandArgs(devConfig.BunInstallCommand...); err != nil {
-		log.Printf("Failed to install Bun dependencies: %v", err)
-		return
+	// Build assets initially
+	fmt.Println("⚡ Building initial assets with Bun...")
+	if err := buildAssets(); err != nil {
+		log.Printf("⚠️  Asset build failed: %v", err)
+		createFallbackAssets()
+	} else {
+		fmt.Println("✅ Assets compiled successfully")
 	}
-
-	// Start Bun in development mode with watch
-	fmt.Println("⚡ Starting Bun asset pipeline...")
-	go runBunDev()
-
-	// Watch for frontend file changes
-	go watchFrontendFiles()
 }
 
-func createDefaultBunSetup() {
-	// Create directories
-	os.MkdirAll(devConfig.FrontendSrcDir, 0755)
-	os.MkdirAll(devConfig.FrontendOutDir, 0755)
-
-	// Read and write package.json from template
-	packageJSON, err := fs.ReadFile(templates, "templates/dev/package.json.tmpl")
-	if err != nil {
-		log.Printf("Failed to read package.json template: %v", err)
-		return
-	}
-	os.WriteFile("package.json", packageJSON, 0644)
-
-	// Read and write index.js from template
-	indexJS, err := fs.ReadFile(templates, "templates/dev/index.js.tmpl")
-	if err != nil {
-		log.Printf("Failed to read index.js template: %v", err)
-		return
-	}
-	os.WriteFile(filepath.Join(devConfig.FrontendSrcDir, "index.js"), indexJS, 0644)
-}
-
-func runBunDev() {
-	cmd := exec.Command(devConfig.BunWatchCommand[0], devConfig.BunWatchCommand[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Start(); err != nil {
-		log.Printf("Failed to start Bun watcher: %v", err)
-		return
-	}
-
-	// Keep the process running
-	cmd.Wait()
-}
-
-func watchFrontendFiles() {
+// watchAndCompileAssets watches for CSS/JS changes and recompiles with Bun
+func watchAndCompileAssets(ctx context.Context) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		log.Printf("Failed to create frontend watcher: %v", err)
+		log.Printf("❌ Failed to create asset watcher: %v", err)
 		return
 	}
 	defer watcher.Close()
 
-	// Watch configured src directory
-	if err := watcher.Add(devConfig.FrontendSrcDir); err != nil {
-		log.Printf("Failed to watch %s directory: %v", devConfig.FrontendSrcDir, err)
+	// Watch src directory
+	srcDir := "src"
+	if err := filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil {
+			return err
+		}
+		if info.IsDir() {
+			return watcher.Add(path)
+		}
+		return nil
+	}); err != nil {
+		log.Printf("❌ Failed to watch src directory: %v", err)
 		return
 	}
 
-	fmt.Println("👀 Watching frontend files for changes...")
+	fmt.Println("👀 Watching assets for changes (Bun.js)...")
+
+	debounce := time.NewTimer(300 * time.Millisecond)
+	debounce.Stop()
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return
 			}
-
-			if event.Op&fsnotify.Write == fsnotify.Write {
-				for _, ext := range devConfig.FrontendWatchExtensions {
-					if strings.HasSuffix(event.Name, ext) {
-						fmt.Printf("🔄 Frontend file changed: %s\n", event.Name)
-						break // Bun watcher will handle the rebuild automatically
-					}
+			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
+				ext := filepath.Ext(event.Name)
+				if ext == ".css" || ext == ".js" || ext == ".ts" {
+					debounce.Reset(300 * time.Millisecond)
 				}
 			}
-
-		case err, ok := <-watcher.Errors:
-			if !ok {
-				return
+		case <-debounce.C:
+			fmt.Println("⚡ Recompiling assets...")
+			if err := buildAssets(); err != nil {
+				log.Printf("❌ Asset compilation failed: %v", err)
+			} else {
+				fmt.Println("✅ Assets recompiled")
 			}
-			log.Printf("Frontend watcher error: %v", err)
+		case err := <-watcher.Errors:
+			log.Printf("❌ Asset watcher error: %v", err)
 		}
 	}
 }
 
-func runCommand(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-func runCommandArgs(args ...string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("no command specified")
-	}
-	return runCommand(args[0], args[1:]...)
-}
-
-func startGoServerWithReload() {
+// startGoServerWithHotReload starts the Go server and restarts it when .go files change
+func startGoServerWithHotReload(ctx context.Context) {
 	fmt.Println("🔥 Starting Go server with hot reload...")
 
 	watcher, err := fsnotify.NewWatcher()
@@ -144,77 +143,147 @@ func startGoServerWithReload() {
 	}
 	defer watcher.Close()
 
-	// Watch Go files
+	// Watch .go files recursively
 	filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
-		if err != nil {
+		if err != nil || info == nil {
 			return err
 		}
-
-		if info.IsDir() && shouldSkipDir(path) {
-			return filepath.SkipDir
+		if info.IsDir() {
+			// Skip hidden directories, vendor, and node_modules
+			if strings.HasPrefix(info.Name(), ".") || info.Name() == "vendor" || info.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			return watcher.Add(path)
 		}
-
-		if strings.HasSuffix(path, ".go") {
-			watcher.Add(filepath.Dir(path))
-		}
-
 		return nil
 	})
 
 	var cmd *exec.Cmd
-	restartServer := func() {
+	var serverStarted = make(chan bool, 1)
+
+	// Function to start/restart the server
+	startServer := func() {
+		// Kill existing process
 		if cmd != nil && cmd.Process != nil {
+			fmt.Println("🔄 Restarting Go server...")
 			cmd.Process.Kill()
 			cmd.Wait()
+		} else {
+			fmt.Println("🚀 Starting Go server...")
 		}
 
-		fmt.Println("🔄 Restarting Go server...")
+		// Start new process
 		cmd = exec.Command("go", "run", "main.go")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		cmd.Start()
+		cmd.Env = os.Environ()
+
+		if err := cmd.Start(); err != nil {
+			log.Printf("❌ Failed to start server: %v", err)
+			return
+		}
+
+		// Signal that server started
+		select {
+		case serverStarted <- true:
+		default:
+		}
 	}
 
-	// Initial start
-	restartServer()
+	// Start server initially
+	startServer()
 
-	// Watch for changes
-	debounce := time.NewTimer(devConfig.GoRestartDebounce)
+	// Debounce timer for restarts
+	debounce := time.NewTimer(500 * time.Millisecond)
 	debounce.Stop()
 
 	for {
 		select {
+		case <-ctx.Done():
+			if cmd != nil && cmd.Process != nil {
+				cmd.Process.Kill()
+			}
+			return
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return
 			}
-
-			if event.Op&fsnotify.Write == fsnotify.Write {
-				for _, ext := range devConfig.GoWatchExtensions {
-					if strings.HasSuffix(event.Name, ext) {
-						debounce.Reset(devConfig.GoRestartDebounce)
-						break
-					}
-				}
+			// Only restart on .go file changes
+			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 && filepath.Ext(event.Name) == ".go" {
+				fmt.Printf("🔄 Code changed: %s\n", filepath.Base(event.Name))
+				debounce.Reset(500 * time.Millisecond)
 			}
-
 		case <-debounce.C:
-			restartServer()
-
-		case err, ok := <-watcher.Errors:
-			if !ok {
-				return
-			}
-			log.Println("Go watcher error:", err)
+			startServer()
+		case err := <-watcher.Errors:
+			log.Printf("❌ Watcher error: %v", err)
 		}
 	}
 }
 
-func shouldSkipDir(path string) bool {
-	for _, skip := range devConfig.GoSkipDirs {
-		if strings.Contains(path, skip) {
-			return true
-		}
+// isBunInstalled checks if Bun is available in PATH
+func isBunInstalled() bool {
+	_, err := exec.LookPath("bun")
+	return err == nil
+}
+
+// installBun installs Bun.js using the official installer
+func installBun() error {
+	cmd := exec.Command("bash", "-c", "curl -fsSL https://bun.sh/install | bash")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("installation failed: %w", err)
 	}
-	return false
+
+	// Add Bun to PATH for this session
+	homeDir, _ := os.UserHomeDir()
+	bunPath := filepath.Join(homeDir, ".bun", "bin")
+	os.Setenv("PATH", bunPath+":"+os.Getenv("PATH"))
+
+	return nil
+}
+
+// buildAssets builds the frontend assets with Bun
+func buildAssets() error {
+	if _, err := os.Stat("src/index.js"); os.IsNotExist(err) {
+		return fmt.Errorf("src/index.js not found")
+	}
+
+	os.MkdirAll("public", 0755)
+
+	// Build with Bun
+	cmd := exec.Command("bun", "build", "src/index.js", "--outdir", "public", "--target", "browser")
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		return fmt.Errorf("build failed: %w\n%s", err, string(output))
+	}
+
+	return nil
+}
+
+// createFallbackAssets creates basic CSS and JS files as fallback
+func createFallbackAssets() {
+	fmt.Println("📝 Creating fallback assets...")
+
+	os.MkdirAll("public", 0755)
+
+	// Copy CSS
+	if cssData, err := os.ReadFile("src/styles.css"); err == nil {
+		os.WriteFile("public/index.css", cssData, 0644)
+		fmt.Println("   ✓ Copied styles.css → public/index.css")
+	}
+
+	// Copy JS (remove import statements)
+	if jsData, err := os.ReadFile("src/index.js"); err == nil {
+		jsContent := string(jsData)
+		jsContent = strings.ReplaceAll(jsContent, "import './styles.css';", "")
+		jsContent = strings.ReplaceAll(jsContent, `import "./styles.css";`, "")
+		os.WriteFile("public/index.js", []byte(jsContent), 0644)
+		fmt.Println("   ✓ Copied index.js → public/index.js")
+	}
+
+	fmt.Println("✅ Fallback assets created")
 }

@@ -2,59 +2,50 @@ package adapters
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
-	
-	"github.com/uptrace/bun"
-	"github.com/uptrace/bun/dialect/pgdialect"
-	"github.com/uptrace/bun/driver/pgdriver"
-	"github.com/uptrace/bun/extra/bundebug"
-	_ "github.com/lib/pq"
+	"strings"
 )
 
-// BunDatabase implements Database interface
-type BunDatabase struct {
-	db *bun.DB
+// DatabaseAdapter is a common interface for all database adapters
+type DatabaseAdapter interface {
+	Connect(ctx context.Context) error
+	ConnectWithDSN(dsn string, debug bool) error
+	Close() error
+	Migrate(ctx context.Context) error
+	Health() error
+	DB() interface{} // Returns underlying database instance
 }
 
+// DatabaseFactory creates database adapters based on driver type
+type DatabaseFactory struct{}
+
+// NewDatabaseFactory creates a new database factory
+func NewDatabaseFactory() *DatabaseFactory {
+	return &DatabaseFactory{}
+}
+
+// CreateDatabase creates a database adapter based on the driver type
+func (f *DatabaseFactory) CreateDatabase(driver string) (DatabaseAdapter, error) {
+	driver = strings.ToLower(driver)
+
+	switch driver {
+	case "postgres", "postgresql":
+		return NewPostgresDatabase(), nil
+	case "sqlite", "sqlite3":
+		return NewSQLiteDatabase(), nil
+	case "mysql":
+		return NewMySQLDatabase(), nil
+	default:
+		return nil, fmt.Errorf("unsupported database driver: %s (supported: postgres, sqlite, mysql)", driver)
+	}
+}
+
+// BunDatabase is an alias for backward compatibility
+// Deprecated: Use NewPostgresDatabase() instead
+type BunDatabase = PostgresDatabase
+
+// NewBunDatabase creates a new PostgreSQL database for backward compatibility
+// Deprecated: Use NewPostgresDatabase() instead
 func NewBunDatabase() *BunDatabase {
-	return &BunDatabase{}
-}
-
-func (d *BunDatabase) Connect(ctx context.Context) error {
-	return nil // Will be implemented when DSN is provided
-}
-
-func (d *BunDatabase) ConnectWithDSN(dsn string, debug bool) error {
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
-	d.db = bun.NewDB(sqldb, pgdialect.New())
-	
-	if debug {
-		d.db.AddQueryHook(bundebug.NewQueryHook(bundebug.WithVerbose(true)))
-	}
-	
-	return d.db.Ping()
-}
-
-func (d *BunDatabase) Close() error {
-	if d.db != nil {
-		return d.db.Close()
-	}
-	return nil
-}
-
-func (d *BunDatabase) Migrate(ctx context.Context) error {
-	// TODO: Implement migration logic
-	return nil
-}
-
-func (d *BunDatabase) Health() error {
-	if d.db != nil {
-		return d.db.Ping()
-	}
-	return fmt.Errorf("database not connected")
-}
-
-func (d *BunDatabase) DB() *bun.DB {
-	return d.db
+	return NewPostgresDatabase()
 }

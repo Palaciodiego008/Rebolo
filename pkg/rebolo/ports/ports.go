@@ -43,7 +43,9 @@ type ConfigData struct {
 		Host string `yaml:"host"`
 	} `yaml:"server"`
 	Database struct {
-		URL string `yaml:"url"`
+		Driver string `yaml:"driver"` // postgres, sqlite, mysql
+		URL    string `yaml:"url"`    // Connection string/DSN or file path for sqlite
+		Debug  bool   `yaml:"debug"`  // Enable query logging
 	} `yaml:"database"`
 	Assets struct {
 		HotReload bool `yaml:"hot_reload"`

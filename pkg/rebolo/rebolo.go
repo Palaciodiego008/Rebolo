@@ -1,6 +1,7 @@
 package rebolo
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -15,7 +16,7 @@ type Application struct {
 	*core.App
 	config   *ConfigAdapter
 	router   *adapters.MuxRouter
-	database *adapters.BunDatabase
+	database adapters.DatabaseAdapter
 	renderer *adapters.HTMLRenderer
 }
 
@@ -24,11 +25,13 @@ type ConfigAdapter struct {
 	data ports.ConfigData
 }
 
-func (c *ConfigAdapter) GetPort() string        { return c.data.Server.Port }
-func (c *ConfigAdapter) GetHost() string        { return c.data.Server.Host }
-func (c *ConfigAdapter) GetDatabaseURL() string { return c.data.Database.URL }
-func (c *ConfigAdapter) GetEnvironment() string { return c.data.App.Env }
-func (c *ConfigAdapter) IsHotReload() bool      { return c.data.Assets.HotReload }
+func (c *ConfigAdapter) GetPort() string           { return c.data.Server.Port }
+func (c *ConfigAdapter) GetHost() string           { return c.data.Server.Host }
+func (c *ConfigAdapter) GetDatabaseDriver() string { return c.data.Database.Driver }
+func (c *ConfigAdapter) GetDatabaseURL() string    { return c.data.Database.URL }
+func (c *ConfigAdapter) GetDatabaseDebug() bool    { return c.data.Database.Debug }
+func (c *ConfigAdapter) GetEnvironment() string    { return c.data.App.Env }
+func (c *ConfigAdapter) IsHotReload() bool         { return c.data.Assets.HotReload }
 
 // New creates a new ReboloLang application
 func New() *Application {
@@ -41,16 +44,34 @@ func New() *Application {
 
 	config := &ConfigAdapter{data: configData}
 	router := adapters.NewMuxRouter()
-	database := adapters.NewBunDatabase()
 	renderer := adapters.NewHTMLRenderer()
 
-	// Connect database if configured
+	// Create database adapter based on driver from config
+	var database adapters.DatabaseAdapter
 	if config.GetDatabaseURL() != "" {
-		if err := database.ConnectWithDSN(config.GetDatabaseURL(), config.GetEnvironment() == "development"); err != nil {
-			log.Printf("Database connection failed: %v", err)
-		} else {
-			log.Println("✅ Database connected successfully")
+		driver := config.GetDatabaseDriver()
+		if driver == "" {
+			driver = "postgres" // Default to postgres for backward compatibility
+			log.Printf("⚠️  No database driver specified, defaulting to 'postgres'")
 		}
+
+		factory := adapters.NewDatabaseFactory()
+		database, err = factory.CreateDatabase(driver)
+		if err != nil {
+			log.Printf("❌ Failed to create database adapter: %v", err)
+			database = adapters.NewBunDatabase() // Fallback to postgres
+		} else {
+			// Connect to database
+			debug := config.GetDatabaseDebug() || config.GetEnvironment() == "development"
+			if err := database.ConnectWithDSN(config.GetDatabaseURL(), debug); err != nil {
+				log.Printf("❌ Database connection failed: %v", err)
+			} else {
+				log.Printf("✅ Database connected successfully (driver: %s)", driver)
+			}
+		}
+	} else {
+		// No database configured, use a default instance
+		database = adapters.NewBunDatabase()
 	}
 
 	// Create core app
@@ -114,6 +135,16 @@ func (a *Application) RenderJSON(w http.ResponseWriter, data interface{}) error 
 
 func (a *Application) RenderError(w http.ResponseWriter, message string, status int) error {
 	return a.renderer.RenderError(w, message, status)
+}
+
+// DB returns the underlying database/sql instance for convenience
+func (a *Application) DB() *sql.DB {
+	if a.database != nil {
+		if db, ok := a.database.DB().(*sql.DB); ok {
+			return db
+		}
+	}
+	return nil
 }
 
 // Middleware

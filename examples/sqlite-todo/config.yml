@@ -1,0 +1,16 @@
+app:
+  name: "Todo API"
+  env: "development"
+
+server:
+  port: "3000"
+  host: "localhost"
+
+database:
+  driver: "sqlite"
+  url: "file:./todos.db?cache=shared&mode=rwc&_journal_mode=WAL"
+  debug: true
+
+assets:
+  hot_reload: true
+

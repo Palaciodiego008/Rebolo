@@ -18,7 +18,9 @@ type App struct {
 type Config interface {
 	GetPort() string
 	GetHost() string
+	GetDatabaseDriver() string
 	GetDatabaseURL() string
+	GetDatabaseDebug() bool
 	GetEnvironment() string
 	IsHotReload() bool
 }
@@ -40,6 +42,7 @@ type Database interface {
 	Close() error
 	Migrate(ctx context.Context) error
 	Health() error
+	DB() interface{} // Returns underlying database instance (*sql.DB)
 }
 
 // Renderer interface for template and JSON rendering
@@ -81,17 +84,17 @@ func (a *App) Start() error {
 			return err
 		}
 	}
-	
+
 	// Apply middleware
 	for _, mw := range a.middleware {
 		a.router.Use(mw)
 	}
-	
+
 	port := a.config.GetPort()
 	if port == "" {
 		port = "3000"
 	}
-	
+
 	return http.ListenAndServe(":"+port, a.router)
 }
 

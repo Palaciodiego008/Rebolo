@@ -2,8 +2,10 @@ package adapters
 
 import (
 	"net/http"
-	"github.com/gorilla/mux"
+
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/core"
+	"github.com/Palaciodiego008/rebololang/pkg/rebolo/routing"
+	"github.com/gorilla/mux"
 )
 
 // MuxRouter implements Router interface
@@ -17,20 +19,20 @@ func NewMuxRouter() *MuxRouter {
 	}
 }
 
-func (r *MuxRouter) GET(path string, handler http.HandlerFunc) {
-	r.HandleFunc(path, handler).Methods("GET")
+func (r *MuxRouter) GET(path string, handler http.HandlerFunc) core.NamedRoute {
+	return &routing.NamedRoute{Route: r.HandleFunc(path, handler).Methods("GET")}
 }
 
-func (r *MuxRouter) POST(path string, handler http.HandlerFunc) {
-	r.HandleFunc(path, handler).Methods("POST")
+func (r *MuxRouter) POST(path string, handler http.HandlerFunc) core.NamedRoute {
+	return &routing.NamedRoute{Route: r.HandleFunc(path, handler).Methods("POST")}
 }
 
-func (r *MuxRouter) PUT(path string, handler http.HandlerFunc) {
-	r.HandleFunc(path, handler).Methods("PUT")
+func (r *MuxRouter) PUT(path string, handler http.HandlerFunc) core.NamedRoute {
+	return &routing.NamedRoute{Route: r.HandleFunc(path, handler).Methods("PUT")}
 }
 
-func (r *MuxRouter) DELETE(path string, handler http.HandlerFunc) {
-	r.HandleFunc(path, handler).Methods("DELETE")
+func (r *MuxRouter) DELETE(path string, handler http.HandlerFunc) core.NamedRoute {
+	return &routing.NamedRoute{Route: r.HandleFunc(path, handler).Methods("DELETE")}
 }
 
 func (r *MuxRouter) Resource(path string, controller core.Controller) {

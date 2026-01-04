@@ -25,12 +25,16 @@ type Config interface {
 	IsHotReload() bool
 }
 
+// NamedRoute is a type alias for route naming support
+// Implementations can return nil if route naming is not needed
+type NamedRoute interface{}
+
 // Router interface for HTTP routing
 type Router interface {
-	GET(path string, handler http.HandlerFunc)
-	POST(path string, handler http.HandlerFunc)
-	PUT(path string, handler http.HandlerFunc)
-	DELETE(path string, handler http.HandlerFunc)
+	GET(path string, handler http.HandlerFunc) NamedRoute
+	POST(path string, handler http.HandlerFunc) NamedRoute
+	PUT(path string, handler http.HandlerFunc) NamedRoute
+	DELETE(path string, handler http.HandlerFunc) NamedRoute
 	Resource(path string, controller Controller)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 	Use(middleware Middleware)

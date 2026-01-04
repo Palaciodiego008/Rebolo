@@ -16,6 +16,7 @@ import (
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/middleware"
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/ports"
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/resource"
+	"github.com/Palaciodiego008/rebololang/pkg/rebolo/routing"
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/session"
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/validation"
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/watcher"
@@ -153,20 +154,36 @@ func (a *Application) Start() error {
 }
 
 // Convenience methods for routing
-func (a *Application) GET(path string, handler http.HandlerFunc) {
-	a.router.GET(path, handler)
+func (a *Application) GET(path string, handler http.HandlerFunc) *routing.NamedRoute {
+	nr := a.router.GET(path, handler)
+	if nr == nil {
+		return nil
+	}
+	return nr.(*routing.NamedRoute)
 }
 
-func (a *Application) POST(path string, handler http.HandlerFunc) {
-	a.router.POST(path, handler)
+func (a *Application) POST(path string, handler http.HandlerFunc) *routing.NamedRoute {
+	nr := a.router.POST(path, handler)
+	if nr == nil {
+		return nil
+	}
+	return nr.(*routing.NamedRoute)
 }
 
-func (a *Application) PUT(path string, handler http.HandlerFunc) {
-	a.router.PUT(path, handler)
+func (a *Application) PUT(path string, handler http.HandlerFunc) *routing.NamedRoute {
+	nr := a.router.PUT(path, handler)
+	if nr == nil {
+		return nil
+	}
+	return nr.(*routing.NamedRoute)
 }
 
-func (a *Application) DELETE(path string, handler http.HandlerFunc) {
-	a.router.DELETE(path, handler)
+func (a *Application) DELETE(path string, handler http.HandlerFunc) *routing.NamedRoute {
+	nr := a.router.DELETE(path, handler)
+	if nr == nil {
+		return nil
+	}
+	return nr.(*routing.NamedRoute)
 }
 
 // ServeStatic serves static files from a directory
@@ -475,4 +492,15 @@ func (a *Application) PerformIn(job worker.Job, d time.Duration) error {
 		return fmt.Errorf("worker not initialized")
 	}
 	return a.worker.PerformIn(job, d)
+}
+
+// URLFor generates a URL for a named route with the given parameters
+func (a *Application) URLFor(name string, params map[string]string) (string, error) {
+	return routing.URLFor(a.router.Router, name, params)
+}
+
+// URLForString is a convenience function that returns the URL as a string
+// or returns an empty string if there's an error
+func (a *Application) URLForString(name string, params map[string]string) string {
+	return routing.URLForString(a.router.Router, name, params)
 }

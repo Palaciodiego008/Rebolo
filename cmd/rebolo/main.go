@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Palaciodiego008/rebololang/pkg/rebolo/tasks"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +21,7 @@ var newCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		appName := args[0]
 		fmt.Printf("Creating new ReboloLang app: %s\n", appName)
-		
+
 		generator := NewGenerator()
 		if err := generator.GenerateApp(appName); err != nil {
 			fmt.Printf("❌ Failed to generate app: %v\n", err)
@@ -48,8 +49,8 @@ var buildCmd = &cobra.Command{
 }
 
 var generateCmd = &cobra.Command{
-	Use:   "generate",
-	Short: "Generate resources, models, controllers",
+	Use:     "generate",
+	Short:   "Generate resources, models, controllers",
 	Aliases: []string{"g"},
 }
 
@@ -75,10 +76,25 @@ var resourceCmd = &cobra.Command{
 		resourceName := args[0]
 		fields := args[1:]
 		fmt.Printf("Generating resource: %s with fields: %v\n", resourceName, fields)
-		
+
 		generator := NewGenerator()
 		if err := generator.GenerateResource(resourceName, fields); err != nil {
 			fmt.Printf("❌ Failed to generate resource: %v\n", err)
+			os.Exit(1)
+		}
+	},
+}
+
+var taskCmd = &cobra.Command{
+	Use:   "task [task-name] [args...]",
+	Short: "Run a task (like Rake tasks)",
+	Long:  `Run a registered task. Use 'rebolo task' without arguments to see all available tasks.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		// Register default tasks
+		tasks.DefaultTasks()
+
+		if err := tasks.RunFromArgs(args); err != nil {
+			fmt.Printf("❌ Task failed: %v\n", err)
 			os.Exit(1)
 		}
 	},
@@ -90,7 +106,8 @@ func init() {
 	rootCmd.AddCommand(buildCmd)
 	rootCmd.AddCommand(generateCmd)
 	rootCmd.AddCommand(dbCmd)
-	
+	rootCmd.AddCommand(taskCmd)
+
 	generateCmd.AddCommand(resourceCmd)
 	dbCmd.AddCommand(migrateCmd)
 }

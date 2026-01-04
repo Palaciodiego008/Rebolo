@@ -20,7 +20,12 @@ var newCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		appName := args[0]
 		fmt.Printf("Creating new ReboloLang app: %s\n", appName)
-		generateApp(appName)
+		
+		generator := NewGenerator()
+		if err := generator.GenerateApp(appName); err != nil {
+			fmt.Printf("❌ Failed to generate app: %v\n", err)
+			os.Exit(1)
+		}
 	},
 }
 
@@ -30,6 +35,15 @@ var devCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Starting ReboloLang development server...")
 		startDevServer()
+	},
+}
+
+var buildCmd = &cobra.Command{
+	Use:   "build",
+	Short: "Build application for production",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("Building ReboloLang application for production...")
+		buildForProduction()
 	},
 }
 
@@ -61,13 +75,19 @@ var resourceCmd = &cobra.Command{
 		resourceName := args[0]
 		fields := args[1:]
 		fmt.Printf("Generating resource: %s with fields: %v\n", resourceName, fields)
-		generateResource(resourceName, fields)
+		
+		generator := NewGenerator()
+		if err := generator.GenerateResource(resourceName, fields); err != nil {
+			fmt.Printf("❌ Failed to generate resource: %v\n", err)
+			os.Exit(1)
+		}
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(newCmd)
 	rootCmd.AddCommand(devCmd)
+	rootCmd.AddCommand(buildCmd)
 	rootCmd.AddCommand(generateCmd)
 	rootCmd.AddCommand(dbCmd)
 	
@@ -81,5 +101,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-
-// Functions implemented in separate files

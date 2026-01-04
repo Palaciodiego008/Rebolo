@@ -1,18 +1,31 @@
-<h1>{{.Name}}s</h1>
-<a href="/{{.RoutePath}}/new" class="btn">New {{.Name}}</a>
-
-<div style="margin-top: 2rem;">
-    {{{{range .{{.Name}}s}}}}
-    <div style="border: 1px solid rgba(255,255,255,0.2); padding: 1rem; margin: 1rem 0; border-radius: 8px; background: rgba(255,255,255,0.1);">
-        <h3><a href="/{{.RoutePath}}/{{{{.ID}}}}" style="color: white;">{{{{.{{.FirstField}}}}}}</a></h3>
-        <div style="margin-top: 10px;">
-            <a href="/{{.RoutePath}}/{{{{.ID}}}}/edit" class="btn" style="background: #2196F3;">Edit</a>
-            <form method="POST" action="/{{.RoutePath}}/{{{{.ID}}}}" style="display: inline; margin-left: 10px;">
-                <input type="hidden" name="_method" value="DELETE">
-                <button type="submit" onclick="return confirm('Are you sure?')" class="btn" style="background: #f44336;">Delete</button>
-            </form>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Name}}s - ReboloLang</title>
+    <link rel="stylesheet" href="/public/index.css">
+</head>
+<body>
+    <div class="container">
+        <h1>{{.Name}}s</h1>
+        <a href="/{{.RoutePath}}/new" class="btn">New {{.Name}}</a>
+        
+        <div class="mt-3">
+            {{ "{{range ." }}{{.Name}}s{{ "}}" }}
+            <div class="item-card">
+                <h3><a href="/{{.RoutePath}}/{{ "{{.ID}}" }}">{{ "{{." }}{{.FirstField}}{{ "}}" }}</a></h3>
+                <div class="actions">
+                    <a href="/{{.RoutePath}}/{{ "{{.ID}}" }}/edit" class="btn btn-edit">Edit</a>
+                    <form method="POST" action="/{{.RoutePath}}/{{ "{{.ID}}" }}">
+                        <input type="hidden" name="_method" value="DELETE">
+                        <button type="submit" class="btn btn-delete">Delete</button>
+                    </form>
+                </div>
+            </div>
+            {{ "{{end}}" }}
         </div>
     </div>
-    {{{{end}}}}
-</div>
-
+    <script src="/public/index.js"></script>
+</body>
+</html>

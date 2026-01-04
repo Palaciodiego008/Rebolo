@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 	
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo"
 )
@@ -10,14 +11,19 @@ import (
 func main() {
 	app := rebolo.New()
 	
+	// Enable hot reload in development mode
+	env := os.Getenv("GO_ENV")
+	if env == "" || env == "development" {
+		if err := app.EnableHotReload(); err != nil {
+			log.Printf("⚠️  Hot reload failed: %v", err)
+		}
+	}
+	
 	// Routes
 	app.GET("/", HomeHandler)
 	
 	// Static files (compiled by Bun.js)
-	app.GET("/public/", http.StripPrefix("/public/", http.FileServer(http.Dir("./public/"))))
-	
-	// Hot reload endpoint for development
-	app.GET("/dev/reload", HotReloadHandler)
+	app.ServeStatic("/public/", "./public/")
 	
 	if err := app.Start(); err != nil {
 		log.Fatal(err)
@@ -26,17 +32,7 @@ func main() {
 
 func HomeHandler(w http.ResponseWriter, r *http.Request) {
 	rebolo.Render(w, "home/index.html", map[string]string{
-		"Title": "Welcome to {{.Name}}",
-		"Framework": "ReboloLang",
+		"Title": "{{.Title}}",
+		"Framework": "{{.Framework}}",
 	})
-}
-
-func HotReloadHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	
-	// Keep connection alive for hot reload
-	select {}
 }

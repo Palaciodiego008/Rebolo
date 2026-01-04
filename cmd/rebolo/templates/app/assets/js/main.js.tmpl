@@ -1,0 +1,41 @@
+// {{.Title}} - Main JavaScript
+
+// Import styles
+import '../css/main.css';
+
+// Initialize app
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('🚀 {{.Title}} loaded!');
+    console.log('Powered by ReboloLang');
+    
+    // Delete confirmations
+    initDeleteConfirmations();
+});
+
+// Delete confirmation for forms
+function initDeleteConfirmations() {
+    const deleteForms = document.querySelectorAll('form[data-confirm]');
+    deleteForms.forEach(form => {
+        form.addEventListener('submit', (e) => {
+            const message = form.dataset.confirm || '¿Estás seguro?';
+            if (!confirm(message)) {
+                e.preventDefault();
+            }
+        });
+    });
+}
+
+// Flash message auto-hide
+setTimeout(() => {
+    const alerts = document.querySelectorAll('.alert');
+    alerts.forEach(alert => {
+        alert.style.transition = 'opacity 0.5s';
+        alert.style.opacity = '0';
+        setTimeout(() => alert.remove(), 500);
+    });
+}, 5000);
+
+// Export utilities
+export { initDeleteConfirmations };
+
+

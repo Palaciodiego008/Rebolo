@@ -1,0 +1,104 @@
+# {{.Title}}
+
+Generated with **ReboloLang** - A modern Go web framework inspired by Buffalo, powered by Bun.js
+
+## 🚀 Quick Start
+
+```bash
+# Install dependencies
+go mod download
+
+# Run in development mode (with hot reload)
+rebolo dev
+
+# Or run directly
+go run main.go
+```
+
+Visit: `http://localhost:3000`
+
+## 📁 Project Structure
+
+```
+{{.Name}}/
+├── app/
+│   ├── controllers/     # HTTP handlers
+│   ├── models/          # Database models
+│   ├── middleware/      # Custom middleware
+│   └── services/        # Business logic
+├── config/
+│   └── config.yml       # Configuration
+├── views/
+│   ├── layouts/         # Layout templates
+│   ├── shared/          # Partials
+│   ├── errors/          # Error pages
+│   └── home/            # Page templates
+├── assets/
+│   ├── css/             # Stylesheets
+│   ├── js/              # JavaScript
+│   └── images/          # Images
+├── public/              # Compiled assets
+├── db/
+│   ├── migrations/      # Database migrations
+│   └── seeds/           # Seed data
+└── main.go              # Entry point
+```
+
+## ✨ Features
+
+- ✅ Hot Reload (automatic)
+- ✅ Sessions & Flash Messages
+- ✅ Context Helpers
+- ✅ Form Validation
+- ✅ Error Handlers
+- ✅ Middleware Stack
+- ✅ Asset Pipeline (Bun.js)
+- ✅ SQLite/PostgreSQL support
+- ✅ Testing Helpers
+
+## 📝 Common Tasks
+
+### Generate a Resource
+
+```bash
+rebolo generate resource Post title:string content:text published:bool
+```
+
+### Run Tests
+
+```bash
+go test ./...
+```
+
+### Build for Production
+
+```bash
+go build -o {{.Name}} .
+GO_ENV=production ./{{.Name}}
+```
+
+## 📚 Documentation
+
+- [ReboloLang Docs](https://github.com/Palaciodiego008/rebololang)
+- [Buffalo (inspiration)](https://gobuffalo.io/)
+
+## 🛠️ Configuration
+
+Edit `config/config.yml` to configure:
+- Server port
+- Database connection
+- Hot reload settings
+
+## 📦 Dependencies
+
+- Go 1.21+
+- Bun.js (for asset compilation)
+- SQLite or PostgreSQL
+
+---
+
+**Built with ❤️ using ReboloLang**
+
+*Inspired by Rebolo, Barranquilla, Colombia 🇨🇴*
+
+

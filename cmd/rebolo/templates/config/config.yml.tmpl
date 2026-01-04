@@ -7,7 +7,9 @@ server:
   host: localhost
 
 database:
-  url: postgres://localhost/{{.Name}}_development
+  driver: sqlite
+  url: "file:./{{.Name}}.db?cache=shared&mode=rwc&_journal_mode=WAL"
+  debug: true
 
 assets:
   hot_reload: true

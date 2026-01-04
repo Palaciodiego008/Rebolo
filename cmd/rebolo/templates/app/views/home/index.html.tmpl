@@ -1,16 +1,27 @@
-{{define "content"}}
-<h1>🚀 {{.Title}}</h1>
-<p>Your ReboloLang application is running successfully!</p>
-<p>Framework: <strong>{{.Framework}}</strong></p>
-<p>Inspired by Rebolo, Barranquilla, Colombia 🇨🇴</p>
-
-<div style="margin-top: 2rem;">
-    <h3>Next Steps:</h3>
-    <ul style="text-align: left; display: inline-block;">
-        <li>Generate resources: <code>rebolo generate resource posts title:string</code></li>
-        <li>Add routes in <code>main.go</code></li>
-        <li>Configure database in <code>config.yml</code></li>
-        <li>Run migrations: <code>rebolo db migrate</code></li>
-    </ul>
-</div>
-{{end}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta charset="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} - {{.Framework}}</title>
+    <link rel="stylesheet" href="/public/index.css">
+</head>
+<body>
+    <div class="container text-center">
+        <h1>🚀 {{.Title}}</h1>
+        <h2 style="color: #764ba2;">{{.Framework}}</h2>
+        <p style="font-size: 1.2rem; color: #666;">Inspired by Rebolo, Barranquilla, Colombia 🇨🇴</p>
+        
+        <div class="mt-4" style="background: #f8f9fa; padding: 2rem; border-radius: 10px;">
+            <h3>Next Steps:</h3>
+            <ul style="text-align: left; display: inline-block;">
+                <li>✅ Generate resources: <code>rebolo generate resource posts title:string</code></li>
+                <li>✅ Add routes in <code>main.go</code></li>
+                <li>✅ Configure database in <code>config.yml</code></li>
+                <li>✅ Run migrations: <code>rebolo db migrate</code></li>
+            </ul>
+        </div>
+    </div>
+    <script src="/public/index.js"></script>
+</body>
+</html>

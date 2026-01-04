@@ -3,12 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{.Title}} - {{.Framework}}</title>
-    <script src="/public/index.js"></script>
+    <title>{{.Name}} - ReboloLang</title>
+    <link rel="stylesheet" href="/public/index.css">
 </head>
 <body>
     <div class="container">
-        {{template "content" .}}
+        <!-- 
+            This is an optional layout file for shared structure.
+            
+            To use this layout with Go templates:
+            1. In your view file, define: {{"{{"}}define "content"{{"}}"}}...{{"{{"}}end{{"}}"}}
+            2. In your layout, use: {{"{{"}}template "content" .{{"}}"}}
+            3. Parse both files together in your template renderer
+            
+            By default, Rebolo generates standalone HTML pages.
+            You can customize this layout as needed for your app!
+        -->
+        <h1>Welcome to {{.Name}}</h1>
+        <p>Edit this layout in views/layouts/application.html</p>
     </div>
+    <script src="/public/index.js"></script>
 </body>
 </html>

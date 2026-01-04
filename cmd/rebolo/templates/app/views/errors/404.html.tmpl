@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404 - Página no encontrada</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            text-align: center;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            max-width: 600px;
+        }
+        h1 { font-size: 8em; margin: 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+        h2 { font-size: 2em; margin: 20px 0; }
+        p { font-size: 1.2em; opacity: 0.9; margin: 10px 0; }
+        .path {
+            font-family: monospace;
+            background: rgba(0,0,0,0.3);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 20px 0;
+            word-break: break-all;
+        }
+        a {
+            display: inline-block;
+            margin-top: 30px;
+            padding: 15px 30px;
+            background: rgba(255,255,255,0.3);
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: transform 0.2s, background 0.2s;
+            font-weight: bold;
+        }
+        a:hover {
+            transform: translateY(-2px);
+            background: rgba(255,255,255,0.4);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>404</h1>
+        <h2>🔍 Página no encontrada</h2>
+        <p>La página que buscas no existe</p>
+        <div class="path">{{.Path}}</div>
+        <a href="/">← Volver al inicio</a>
+    </div>
+</body>
+</html>
+
+

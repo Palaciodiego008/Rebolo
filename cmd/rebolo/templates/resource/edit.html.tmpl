@@ -1,20 +1,36 @@
-<h1>Edit {{.Name}}</h1>
-<form method="POST" action="/{{.RoutePath}}/{{{{.ID}}}}" style="max-width: 500px; text-align: left;">
-    <input type="hidden" name="_method" value="PUT">
-{{range .Fields}}{{if eq .HTMLType "textarea"}}    <div class="form-group">
-        <label><strong>{{.Name}}:</strong></label>
-        <textarea name="{{.FormName}}" rows="4">{{{{{{.}}{{.Name}}}}}}</textarea>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit {{.Name}} - ReboloLang</title>
+    <link rel="stylesheet" href="/public/index.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Edit {{.Name}}</h1>
+        <form method="POST" action="/{{.RoutePath}}/{{ "{{.ID}}" }}">
+            <input type="hidden" name="_method" value="PUT">
+{{range .Fields}}{{if eq .HTMLType "textarea"}}            <div class="form-group">
+                <label>{{.Name}}:</label>
+                <textarea name="{{.FormName}}" rows="4">{{ "{{." }}{{.Name}}{{ "}}" }}</textarea>
+            </div>
+{{else if eq .HTMLType "checkbox"}}            <div class="form-group">
+                <label>
+                    <input type="checkbox" name="{{.FormName}}" value="true" {{ "{{if ." }}{{.Name}}{{ "}}checked{{end}}" }}>
+                    {{.Name}}
+                </label>
+            </div>
+{{else}}            <div class="form-group">
+                <label>{{.Name}}:</label>
+                <input type="{{.HTMLType}}" name="{{.FormName}}" value="{{ "{{." }}{{.Name}}{{ "}}" }}">
+            </div>
+{{end}}{{end}}            <div class="actions">
+                <button type="submit" class="btn">Update {{.Name}}</button>
+                <a href="/{{.RoutePath}}/{{ "{{.ID}}" }}" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
     </div>
-{{else if eq .HTMLType "checkbox"}}    <div class="form-group">
-        <label><input type="checkbox" name="{{.FormName}}" value="true" {{{{if .{{.Name}}}}}}checked{{{{end}}}}> <strong>{{.Name}}</strong></label>
-    </div>
-{{else}}    <div class="form-group">
-        <label><strong>{{.Name}}:</strong></label>
-        <input type="{{.HTMLType}}" name="{{.FormName}}" value="{{{{{{.}}{{.Name}}}}}}">
-    </div>
-{{end}}{{end}}    <div style="margin-top: 1rem;">
-        <button type="submit" class="btn" style="background: #2196F3;">Update {{.Name}}</button>
-        <a href="/{{.RoutePath}}/{{{{.ID}}}}" class="btn" style="background: #666; margin-left: 10px;">Cancel</a>
-    </div>
-</form>
-
+    <script src="/public/index.js"></script>
+</body>
+</html>

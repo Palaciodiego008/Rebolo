@@ -17,7 +17,8 @@ import (
 var templates embed.FS
 
 type Generator struct {
-	templates *template.Template
+	templates   *template.Template
+	typeMapping *FieldTypeMapping
 }
 
 type AppData struct {
@@ -28,13 +29,14 @@ type AppData struct {
 }
 
 type ResourceData struct {
-	Name      string
-	VarName   string
-	TableName string
-	ViewPath  string
-	RoutePath string
-	Fields    []Field
-	Timestamp string
+	Name       string
+	VarName    string
+	TableName  string
+	ViewPath   string
+	RoutePath  string
+	Fields     []Field
+	FirstField string
+	Timestamp  string
 }
 
 type Field struct {
@@ -64,9 +66,16 @@ func NewGenerator() *Generator {
 		"templates/resource/model.go.tmpl",
 		"templates/resource/controller.go.tmpl",
 		"templates/resource/migration.sql.tmpl",
+		"templates/resource/index.html.tmpl",
+		"templates/resource/show.html.tmpl",
+		"templates/resource/new.html.tmpl",
+		"templates/resource/edit.html.tmpl",
 	))
 
-	return &Generator{templates: tmpl}
+	return &Generator{
+		templates:   tmpl,
+		typeMapping: DefaultFieldTypeMapping(),
+	}
 }
 
 func (g *Generator) GenerateApp(name string) error {
@@ -119,13 +128,14 @@ func (g *Generator) GenerateResource(name string, fieldArgs []string) error {
 	fields := g.parseFields(fieldArgs)
 
 	data := ResourceData{
-		Name:      cases.Title(language.English).String(name),
-		VarName:   strings.ToLower(name),
-		TableName: g.pluralize(strings.ToLower(name)),
-		ViewPath:  g.pluralize(strings.ToLower(name)),
-		RoutePath: g.pluralize(strings.ToLower(name)),
-		Fields:    fields,
-		Timestamp: time.Now().Format("20060102150405"),
+		Name:       cases.Title(language.English).String(name),
+		VarName:    strings.ToLower(name),
+		TableName:  g.pluralize(strings.ToLower(name)),
+		ViewPath:   g.pluralize(strings.ToLower(name)),
+		RoutePath:  g.pluralize(strings.ToLower(name)),
+		Fields:     fields,
+		FirstField: g.getFirstStringField(fields),
+		Timestamp:  time.Now().Format("20060102150405"),
 	}
 
 	// Create directories
@@ -134,22 +144,21 @@ func (g *Generator) GenerateResource(name string, fieldArgs []string) error {
 	os.MkdirAll("db/migrations", 0755)
 	os.MkdirAll(filepath.Join("views", data.ViewPath), 0755)
 
-	// Generate files
+	// Generate files (models, controllers, migrations, views)
 	files := map[string]string{
 		filepath.Join("models", data.VarName+".go"):                                        "resource/model.go.tmpl",
 		filepath.Join("controllers", data.VarName+"_controller.go"):                        "resource/controller.go.tmpl",
 		filepath.Join("db", "migrations", data.Timestamp+"_create_"+data.TableName+".sql"): "resource/migration.sql.tmpl",
+		filepath.Join("views", data.ViewPath, "index.html"):                                "resource/index.html.tmpl",
+		filepath.Join("views", data.ViewPath, "show.html"):                                 "resource/show.html.tmpl",
+		filepath.Join("views", data.ViewPath, "new.html"):                                  "resource/new.html.tmpl",
+		filepath.Join("views", data.ViewPath, "edit.html"):                                 "resource/edit.html.tmpl",
 	}
 
 	for filePath, tmplName := range files {
 		if err := g.renderTemplate(tmplName, filePath, data); err != nil {
 			return fmt.Errorf("failed to generate %s: %w", filePath, err)
 		}
-	}
-
-	// Generate views
-	if err := g.generateViews(data); err != nil {
-		return err
 	}
 
 	fmt.Printf("✅ Generated resource: %s\n", name)
@@ -203,174 +212,50 @@ func (g *Generator) parseFields(fieldArgs []string) []Field {
 }
 
 func (g *Generator) mapToGoType(dbType string) string {
-	switch dbType {
-	case "string", "text":
-		return "string"
-	case "int", "integer":
-		return "int64"
-	case "bool", "boolean":
-		return "bool"
-	case "float":
-		return "float64"
-	case "time", "datetime":
-		return "time.Time"
-	default:
-		return "string"
+	if goType, ok := g.typeMapping.GoTypes[dbType]; ok {
+		return goType
 	}
+	return "string" // default fallback
 }
 
 func (g *Generator) mapToSQLType(goType string) string {
-	switch goType {
-	case "string":
-		return "VARCHAR(255)"
-	case "text":
-		return "TEXT"
-	case "int", "integer":
-		return "BIGINT"
-	case "bool", "boolean":
-		return "BOOLEAN"
-	case "float":
-		return "DECIMAL"
-	case "time", "datetime":
-		return "TIMESTAMP"
-	default:
-		return "VARCHAR(255)"
+	if sqlType, ok := g.typeMapping.SQLTypes[goType]; ok {
+		return sqlType
 	}
+	return "VARCHAR(255)" // default fallback
 }
 
 func (g *Generator) mapToHTMLType(goType string) string {
-	switch goType {
-	case "string":
-		return "text"
-	case "text":
-		return "textarea"
-	case "int", "integer":
-		return "number"
-	case "bool", "boolean":
-		return "checkbox"
-	case "float":
-		return "number"
-	case "time", "datetime":
-		return "datetime-local"
-	default:
-		return "text"
+	if htmlType, ok := g.typeMapping.HTMLTypes[goType]; ok {
+		return htmlType
 	}
+	return "text" // default fallback
 }
 
 func (g *Generator) pluralize(word string) string {
-	// Simple pluralization
-	if strings.HasSuffix(word, "s") {
+	// Enhanced pluralization rules
+	switch {
+	case strings.HasSuffix(word, "s"), strings.HasSuffix(word, "x"), strings.HasSuffix(word, "z"):
 		return word + "es"
-	}
-	return word + "s"
-}
-
-func (g *Generator) generateViews(data ResourceData) error {
-	views := map[string]string{
-		"index.html": g.generateIndexView(data),
-		"show.html":  g.generateShowView(data),
-		"new.html":   g.generateNewView(data),
-		"edit.html":  g.generateEditView(data),
-	}
-
-	for filename, content := range views {
-		filePath := filepath.Join("views", data.ViewPath, filename)
-		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-			return err
+	case strings.HasSuffix(word, "ch"), strings.HasSuffix(word, "sh"):
+		return word + "es"
+	case strings.HasSuffix(word, "y"):
+		// Check if preceded by consonant
+		if len(word) > 1 && !isVowel(rune(word[len(word)-2])) {
+			return word[:len(word)-1] + "ies"
 		}
+		return word + "s"
+	case strings.HasSuffix(word, "f"):
+		return word[:len(word)-1] + "ves"
+	case strings.HasSuffix(word, "fe"):
+		return word[:len(word)-2] + "ves"
+	default:
+		return word + "s"
 	}
-
-	return nil
 }
 
-func (g *Generator) generateIndexView(data ResourceData) string {
-	return fmt.Sprintf(`<h1>%s</h1>
-<a href="/%s/new" class="btn">New %s</a>
-
-<div style="margin-top: 2rem;">
-    {{range .%s}}
-    <div style="border: 1px solid rgba(255,255,255,0.2); padding: 1rem; margin: 1rem 0; border-radius: 8px; background: rgba(255,255,255,0.1);">
-        <h3><a href="/%s/{{.ID}}" style="color: white;">{{.%s}}</a></h3>
-        <div style="margin-top: 10px;">
-            <a href="/%s/{{.ID}}/edit" class="btn" style="background: #2196F3;">Edit</a>
-            <form method="POST" action="/%s/{{.ID}}" style="display: inline; margin-left: 10px;">
-                <input type="hidden" name="_method" value="DELETE">
-                <button type="submit" onclick="return confirm('Are you sure?')" class="btn" style="background: #f44336;">Delete</button>
-            </form>
-        </div>
-    </div>
-    {{end}}
-</div>`,
-		cases.Title(language.English).String(data.TableName), data.RoutePath, data.Name,
-		cases.Title(language.English).String(data.TableName), data.RoutePath, g.getFirstStringField(data.Fields),
-		data.RoutePath, data.RoutePath)
-}
-
-func (g *Generator) generateShowView(data ResourceData) string {
-	fieldsHTML := ""
-	for _, field := range data.Fields {
-		fieldsHTML += fmt.Sprintf(`    <p><strong>%s:</strong> {{.%s}}</p>
-`, field.Name, field.Name)
-	}
-
-	return fmt.Sprintf(`<h1>%s Details</h1>
-<div style="background: rgba(255,255,255,0.1); padding: 2rem; border-radius: 8px; margin: 1rem 0; text-align: left;">
-%s</div>
-<div>
-    <a href="/%s/{{.ID}}/edit" class="btn" style="background: #2196F3;">Edit</a>
-    <a href="/%s" class="btn" style="background: #666; margin-left: 10px;">Back to List</a>
-</div>`,
-		data.Name, fieldsHTML, data.RoutePath, data.RoutePath)
-}
-
-func (g *Generator) generateNewView(data ResourceData) string {
-	return fmt.Sprintf(`<h1>New %s</h1>
-<form method="POST" action="/%s" style="max-width: 500px; text-align: left;">
-%s
-    <div style="margin-top: 1rem;">
-        <button type="submit" class="btn">Create %s</button>
-        <a href="/%s" class="btn" style="background: #666; margin-left: 10px;">Cancel</a>
-    </div>
-</form>`,
-		data.Name, data.RoutePath, g.generateFormFields(data.Fields), data.Name, data.RoutePath)
-}
-
-func (g *Generator) generateEditView(data ResourceData) string {
-	return fmt.Sprintf(`<h1>Edit %s</h1>
-<form method="POST" action="/%s/{{.ID}}" style="max-width: 500px; text-align: left;">
-    <input type="hidden" name="_method" value="PUT">
-%s
-    <div style="margin-top: 1rem;">
-        <button type="submit" class="btn" style="background: #2196F3;">Update %s</button>
-        <a href="/%s/{{.ID}}" class="btn" style="background: #666; margin-left: 10px;">Cancel</a>
-    </div>
-</form>`,
-		data.Name, data.RoutePath, g.generateFormFields(data.Fields), data.Name, data.RoutePath)
-}
-
-func (g *Generator) generateFormFields(fields []Field) string {
-	html := ""
-	for _, field := range fields {
-		if field.HTMLType == "textarea" {
-			html += fmt.Sprintf(`    <div class="form-group">
-        <label><strong>%s:</strong></label>
-        <textarea name="%s" rows="4"></textarea>
-    </div>
-`, field.Name, field.FormName)
-		} else if field.HTMLType == "checkbox" {
-			html += fmt.Sprintf(`    <div class="form-group">
-        <label><input type="checkbox" name="%s" value="true"> <strong>%s</strong></label>
-    </div>
-`, field.FormName, field.Name)
-		} else {
-			html += fmt.Sprintf(`    <div class="form-group">
-        <label><strong>%s:</strong></label>
-        <input type="%s" name="%s">
-    </div>
-`, field.Name, field.HTMLType, field.FormName)
-		}
-	}
-	return html
+func isVowel(r rune) bool {
+	return strings.ContainsRune("aeiouAEIOU", r)
 }
 
 func (g *Generator) getFirstStringField(fields []Field) string {

@@ -1,114 +1,80 @@
 package main
 
 import (
+	"embed"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
+	"time"
 )
 
-type AppTemplate struct {
-	Name   string
-	Module string
+//go:embed templates
+var templates embed.FS
+
+type Generator struct {
+	templates *template.Template
 }
 
-const appMainTemplate = `package main
-
-import (
-	"log"
-	"net/http"
-	
-	"github.com/Palaciodiego008/rebololang/pkg/rebolo"
-)
-
-func main() {
-	app := rebolo.New()
-	
-	// Routes
-	app.GET("/", HomeHandler)
-	
-	// Static files
-	app.router.PathPrefix("/public/").Handler(http.StripPrefix("/public/", http.FileServer(http.Dir("./public/"))))
-	
-	if err := app.Start(); err != nil {
-		log.Fatal(err)
-	}
+type AppData struct {
+	Name      string
+	Module    string
+	Framework string
+	Title     string
 }
 
-func HomeHandler(w http.ResponseWriter, r *http.Request) {
-	rebolo.Render(w, "home/index.html", map[string]string{
-		"Title": "Welcome to {{.Name}}",
-		"Framework": "ReboloLang",
+type ResourceData struct {
+	Name      string
+	VarName   string
+	TableName string
+	ViewPath  string
+	RoutePath string
+	Fields    []Field
+	Timestamp string
+}
+
+type Field struct {
+	Name     string
+	DBName   string
+	FormName string
+	GoType   string
+	SQLType  string
+	HTMLType string
+}
+
+func NewGenerator() *Generator {
+	// Parse all template files recursively
+	tmpl := template.New("").Funcs(template.FuncMap{
+		"title": strings.Title,
+		"lower": strings.ToLower,
 	})
-}
-`
-
-const configTemplate = `app:
-  name: {{.Name}}
-  env: development
-
-server:
-  port: 3000
-  host: localhost
-
-database:
-  url: postgres://localhost/{{.Name}}_development
-
-assets:
-  hot_reload: true
-`
-
-const packageJsonTemplate = `{
-  "name": "{{.Name}}",
-  "version": "1.0.0",
-  "scripts": {
-    "dev": "bun --watch src/index.js",
-    "build": "bun build src/index.js --outdir=public"
-  },
-  "devDependencies": {
-    "bun": "latest"
-  }
-}
-`
-
-const bunIndexTemplate = `// {{.Name}} - Frontend Assets powered by ReboloLang
-console.log('🚀 {{.Name}} loaded with ReboloLang!');
-
-// Hot reload in development
-if (process.env.NODE_ENV === 'development') {
-  const eventSource = new EventSource('/dev/reload');
-  eventSource.onmessage = () => {
-    console.log('🔄 Hot reloading...');
-    location.reload();
-  };
+	
+	// Parse templates manually to handle nested directories
+	tmpl = template.Must(tmpl.ParseFS(templates, 
+		"templates/app/main.go.tmpl",
+		"templates/app/package.json.tmpl", 
+		"templates/app/src/index.js.tmpl",
+		"templates/app/views/layouts/application.html.tmpl",
+		"templates/app/views/home/index.html.tmpl",
+		"templates/config/config.yml.tmpl",
+		"templates/resource/model.go.tmpl",
+		"templates/resource/controller.go.tmpl",
+		"templates/resource/migration.sql.tmpl",
+	))
+	
+	return &Generator{templates: tmpl}
 }
 
-// Add some basic styling
-document.addEventListener('DOMContentLoaded', function() {
-  const style = document.createElement('style');
-  style.textContent = ` + "`" + `
-    body { 
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      margin: 0;
-      padding: 2rem;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      min-height: 100vh;
-    }
-    h1 { font-size: 3rem; margin-bottom: 1rem; }
-    p { font-size: 1.2rem; opacity: 0.9; }
-    .container { max-width: 800px; margin: 0 auto; text-align: center; }
-  ` + "`" + `;
-  document.head.appendChild(style);
-});
-`
-
-func generateApp(name string) {
-	appData := AppTemplate{
-		Name:   name,
-		Module: "github.com/Palaciodiego008/" + name,
+func (g *Generator) GenerateApp(name string) error {
+	data := AppData{
+		Name:      name,
+		Module:    fmt.Sprintf("github.com/Palaciodiego008/%s", name),
+		Framework: "ReboloLang",
+		Title:     fmt.Sprintf("Welcome to %s", name),
 	}
 	
-	// Create directories
+	// Create directory structure
 	dirs := []string{
 		name,
 		filepath.Join(name, "controllers"),
@@ -121,69 +87,294 @@ func generateApp(name string) {
 	}
 	
 	for _, dir := range dirs {
-		os.MkdirAll(dir, 0755)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
 	}
+	
+	// Generate files from templates
+	files := map[string]string{
+		filepath.Join(name, "main.go"):                           "app/main.go.tmpl",
+		filepath.Join(name, "package.json"):                     "app/package.json.tmpl",
+		filepath.Join(name, "config.yml"):                       "config/config.yml.tmpl",
+		filepath.Join(name, "src", "index.js"):                  "app/src/index.js.tmpl",
+		filepath.Join(name, "views", "layouts", "application.html"): "app/views/layouts/application.html.tmpl",
+		filepath.Join(name, "views", "home", "index.html"):      "app/views/home/index.html.tmpl",
+	}
+	
+	for filePath, tmplName := range files {
+		if err := g.renderTemplate(tmplName, filePath, data); err != nil {
+			return fmt.Errorf("failed to generate %s: %w", filePath, err)
+		}
+	}
+	
+	fmt.Printf("✅ Generated app: %s\n", name)
+	return nil
+}
+
+func (g *Generator) GenerateResource(name string, fieldArgs []string) error {
+	fields := g.parseFields(fieldArgs)
+	
+	data := ResourceData{
+		Name:      strings.Title(name),
+		VarName:   strings.ToLower(name),
+		TableName: g.pluralize(strings.ToLower(name)),
+		ViewPath:  g.pluralize(strings.ToLower(name)),
+		RoutePath: g.pluralize(strings.ToLower(name)),
+		Fields:    fields,
+		Timestamp: time.Now().Format("20060102150405"),
+	}
+	
+	// Create directories
+	os.MkdirAll("models", 0755)
+	os.MkdirAll("controllers", 0755)
+	os.MkdirAll("db/migrations", 0755)
+	os.MkdirAll(filepath.Join("views", data.ViewPath), 0755)
 	
 	// Generate files
 	files := map[string]string{
-		filepath.Join(name, "main.go"):       appMainTemplate,
-		filepath.Join(name, "config.yml"):   configTemplate,
-		filepath.Join(name, "package.json"): packageJsonTemplate,
-		filepath.Join(name, "src", "index.js"): bunIndexTemplate,
+		filepath.Join("models", data.VarName+".go"):                                    "resource/model.go.tmpl",
+		filepath.Join("controllers", data.VarName+"_controller.go"):                   "resource/controller.go.tmpl",
+		filepath.Join("db", "migrations", data.Timestamp+"_create_"+data.TableName+".sql"): "resource/migration.sql.tmpl",
 	}
 	
-	for path, tmplContent := range files {
-		tmpl := template.Must(template.New("").Parse(tmplContent))
-		file, _ := os.Create(path)
-		tmpl.Execute(file, appData)
-		file.Close()
+	for filePath, tmplName := range files {
+		if err := g.renderTemplate(tmplName, filePath, data); err != nil {
+			return fmt.Errorf("failed to generate %s: %w", filePath, err)
+		}
 	}
 	
-	// Create basic HTML templates
-	createHTMLTemplates(name, appData)
+	// Generate views
+	if err := g.generateViews(data); err != nil {
+		return err
+	}
+	
+	fmt.Printf("✅ Generated resource: %s\n", name)
+	fmt.Printf("   - Model: models/%s.go\n", data.VarName)
+	fmt.Printf("   - Controller: controllers/%s_controller.go\n", data.VarName)
+	fmt.Printf("   - Migration: db/migrations/%s_create_%s.sql\n", data.Timestamp, data.TableName)
+	fmt.Printf("   - Views: views/%s/\n", data.ViewPath)
+	
+	return nil
 }
 
-func createHTMLTemplates(appName string, data AppTemplate) {
-	layoutHTML := `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{.Title}} - {{.Framework}}</title>
-    <script src="/public/index.js"></script>
-</head>
-<body>
-    <div class="container">
-        {{template "content" .}}
-    </div>
-</body>
-</html>`
+func (g *Generator) renderTemplate(tmplName, filePath string, data interface{}) error {
+	file, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	
+	// Extract just the filename from the template path
+	parts := strings.Split(tmplName, "/")
+	templateName := parts[len(parts)-1]
+	
+	return g.templates.ExecuteTemplate(file, templateName, data)
+}
 
-	homeHTML := `{{define "content"}}
-<h1>🚀 {{.Title}}</h1>
-<p>Your ReboloLang application is running successfully!</p>
-<p>Framework: <strong>{{.Framework}}</strong></p>
-<p>Inspired by Rebolo, Barranquilla, Colombia 🇨🇴</p>
+func (g *Generator) parseFields(fieldArgs []string) []Field {
+	var fields []Field
+	
+	for _, arg := range fieldArgs {
+		parts := strings.Split(arg, ":")
+		if len(parts) != 2 {
+			continue
+		}
+		
+		name := parts[0]
+		fieldType := parts[1]
+		
+		field := Field{
+			Name:     strings.Title(name),
+			DBName:   strings.ToLower(name),
+			FormName: strings.ToLower(name),
+			GoType:   g.mapToGoType(fieldType),
+			SQLType:  g.mapToSQLType(fieldType),
+			HTMLType: g.mapToHTMLType(fieldType),
+		}
+		
+		fields = append(fields, field)
+	}
+	
+	return fields
+}
+
+func (g *Generator) mapToGoType(dbType string) string {
+	switch dbType {
+	case "string", "text":
+		return "string"
+	case "int", "integer":
+		return "int64"
+	case "bool", "boolean":
+		return "bool"
+	case "float":
+		return "float64"
+	case "time", "datetime":
+		return "time.Time"
+	default:
+		return "string"
+	}
+}
+
+func (g *Generator) mapToSQLType(goType string) string {
+	switch goType {
+	case "string":
+		return "VARCHAR(255)"
+	case "text":
+		return "TEXT"
+	case "int", "integer":
+		return "BIGINT"
+	case "bool", "boolean":
+		return "BOOLEAN"
+	case "float":
+		return "DECIMAL"
+	case "time", "datetime":
+		return "TIMESTAMP"
+	default:
+		return "VARCHAR(255)"
+	}
+}
+
+func (g *Generator) mapToHTMLType(goType string) string {
+	switch goType {
+	case "string":
+		return "text"
+	case "text":
+		return "textarea"
+	case "int", "integer":
+		return "number"
+	case "bool", "boolean":
+		return "checkbox"
+	case "float":
+		return "number"
+	case "time", "datetime":
+		return "datetime-local"
+	default:
+		return "text"
+	}
+}
+
+func (g *Generator) pluralize(word string) string {
+	// Simple pluralization
+	if strings.HasSuffix(word, "s") {
+		return word + "es"
+	}
+	return word + "s"
+}
+
+func (g *Generator) generateViews(data ResourceData) error {
+	views := map[string]string{
+		"index.html": g.generateIndexView(data),
+		"show.html":  g.generateShowView(data),
+		"new.html":   g.generateNewView(data),
+		"edit.html":  g.generateEditView(data),
+	}
+	
+	for filename, content := range views {
+		filePath := filepath.Join("views", data.ViewPath, filename)
+		if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+			return err
+		}
+	}
+	
+	return nil
+}
+
+func (g *Generator) generateIndexView(data ResourceData) string {
+	return fmt.Sprintf(`<h1>%s</h1>
+<a href="/%s/new" class="btn">New %s</a>
 
 <div style="margin-top: 2rem;">
-    <h3>Next Steps:</h3>
-    <ul style="text-align: left; display: inline-block;">
-        <li>Generate resources: <code>rebololang generate resource posts title:string</code></li>
-        <li>Add routes in <code>main.go</code></li>
-        <li>Configure database in <code>config.yml</code></li>
-        <li>Run migrations: <code>rebololang db migrate</code></li>
-    </ul>
-</div>
-{{end}}`
+    {{range .%s}}
+    <div style="border: 1px solid rgba(255,255,255,0.2); padding: 1rem; margin: 1rem 0; border-radius: 8px; background: rgba(255,255,255,0.1);">
+        <h3><a href="/%s/{{.ID}}" style="color: white;">{{.%s}}</a></h3>
+        <div style="margin-top: 10px;">
+            <a href="/%s/{{.ID}}/edit" class="btn" style="background: #2196F3;">Edit</a>
+            <form method="POST" action="/%s/{{.ID}}" style="display: inline; margin-left: 10px;">
+                <input type="hidden" name="_method" value="DELETE">
+                <button type="submit" onclick="return confirm('Are you sure?')" class="btn" style="background: #f44336;">Delete</button>
+            </form>
+        </div>
+    </div>
+    {{end}}
+</div>`, 
+		strings.Title(data.TableName), data.RoutePath, data.Name,
+		strings.Title(data.TableName), data.RoutePath, g.getFirstStringField(data.Fields),
+		data.RoutePath, data.RoutePath)
+}
 
-	// Write layout
-	layoutFile, _ := os.Create(filepath.Join(appName, "views", "layouts", "application.html"))
-	tmpl := template.Must(template.New("").Parse(layoutHTML))
-	tmpl.Execute(layoutFile, data)
-	layoutFile.Close()
+func (g *Generator) generateShowView(data ResourceData) string {
+	fieldsHTML := ""
+	for _, field := range data.Fields {
+		fieldsHTML += fmt.Sprintf(`    <p><strong>%s:</strong> {{.%s}}</p>
+`, field.Name, field.Name)
+	}
 	
-	// Write home view
-	homeFile, _ := os.Create(filepath.Join(appName, "views", "home", "index.html"))
-	homeFile.WriteString(homeHTML)
-	homeFile.Close()
+	return fmt.Sprintf(`<h1>%s Details</h1>
+<div style="background: rgba(255,255,255,0.1); padding: 2rem; border-radius: 8px; margin: 1rem 0; text-align: left;">
+%s</div>
+<div>
+    <a href="/%s/{{.ID}}/edit" class="btn" style="background: #2196F3;">Edit</a>
+    <a href="/%s" class="btn" style="background: #666; margin-left: 10px;">Back to List</a>
+</div>`, 
+		data.Name, fieldsHTML, data.RoutePath, data.RoutePath)
+}
+
+func (g *Generator) generateNewView(data ResourceData) string {
+	return fmt.Sprintf(`<h1>New %s</h1>
+<form method="POST" action="/%s" style="max-width: 500px; text-align: left;">
+%s
+    <div style="margin-top: 1rem;">
+        <button type="submit" class="btn">Create %s</button>
+        <a href="/%s" class="btn" style="background: #666; margin-left: 10px;">Cancel</a>
+    </div>
+</form>`, 
+		data.Name, data.RoutePath, g.generateFormFields(data.Fields), data.Name, data.RoutePath)
+}
+
+func (g *Generator) generateEditView(data ResourceData) string {
+	return fmt.Sprintf(`<h1>Edit %s</h1>
+<form method="POST" action="/%s/{{.ID}}" style="max-width: 500px; text-align: left;">
+    <input type="hidden" name="_method" value="PUT">
+%s
+    <div style="margin-top: 1rem;">
+        <button type="submit" class="btn" style="background: #2196F3;">Update %s</button>
+        <a href="/%s/{{.ID}}" class="btn" style="background: #666; margin-left: 10px;">Cancel</a>
+    </div>
+</form>`, 
+		data.Name, data.RoutePath, g.generateFormFields(data.Fields), data.Name, data.RoutePath)
+}
+
+func (g *Generator) generateFormFields(fields []Field) string {
+	html := ""
+	for _, field := range fields {
+		if field.HTMLType == "textarea" {
+			html += fmt.Sprintf(`    <div class="form-group">
+        <label><strong>%s:</strong></label>
+        <textarea name="%s" rows="4"></textarea>
+    </div>
+`, field.Name, field.FormName)
+		} else if field.HTMLType == "checkbox" {
+			html += fmt.Sprintf(`    <div class="form-group">
+        <label><input type="checkbox" name="%s" value="true"> <strong>%s</strong></label>
+    </div>
+`, field.FormName, field.Name)
+		} else {
+			html += fmt.Sprintf(`    <div class="form-group">
+        <label><strong>%s:</strong></label>
+        <input type="%s" name="%s">
+    </div>
+`, field.Name, field.HTMLType, field.FormName)
+		}
+	}
+	return html
+}
+
+func (g *Generator) getFirstStringField(fields []Field) string {
+	for _, field := range fields {
+		if field.GoType == "string" {
+			return field.Name
+		}
+	}
+	return "ID"
 }

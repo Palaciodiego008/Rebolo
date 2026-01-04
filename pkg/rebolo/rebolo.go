@@ -10,13 +10,16 @@ import (
 	"time"
 
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/adapters"
+	rebolocontext "github.com/Palaciodiego008/rebololang/pkg/rebolo/context"
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/core"
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/errors"
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/middleware"
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/ports"
+	"github.com/Palaciodiego008/rebololang/pkg/rebolo/resource"
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/session"
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/validation"
 	"github.com/Palaciodiego008/rebololang/pkg/rebolo/watcher"
+	"github.com/Palaciodiego008/rebololang/pkg/rebolo/worker"
 )
 
 // Application represents the main application facade
@@ -30,6 +33,7 @@ type Application struct {
 	sessionStore    *session.SessionStore       // Session management
 	errorHandlers   errors.ErrorHandlers        // Custom error handlers
 	middlewareStack *middleware.MiddlewareStack // Middleware stack with skip patterns
+	worker          worker.Worker               // Background worker for jobs
 	mu              sync.RWMutex                // For thread-safe template reloading
 	ctx             context.Context
 	cancelFunc      context.CancelFunc
@@ -104,6 +108,9 @@ func New() *Application {
 	secretKey := []byte("rebolo-secret-key-change-in-production")
 	sessionStore := session.NewCookieSessionStore("rebolo_session", secretKey)
 
+	// Create background worker
+	bgWorker := worker.NewSimpleWithContext(ctx)
+
 	app := &Application{
 		App:             coreApp,
 		config:          config,
@@ -113,6 +120,7 @@ func New() *Application {
 		sessionStore:    sessionStore,
 		errorHandlers:   errors.NewErrorHandlers(),
 		middlewareStack: middleware.NewMiddlewareStack(),
+		worker:          bgWorker,
 		ctx:             ctx,
 		cancelFunc:      cancel,
 	}
@@ -129,6 +137,15 @@ func (a *Application) Start() error {
 	port := a.config.GetPort()
 	if port == "" {
 		port = "3000"
+	}
+
+	// Start background worker
+	if a.worker != nil {
+		if err := a.worker.Start(a.ctx); err != nil {
+			log.Printf("⚠️  Failed to start worker: %v", err)
+		} else {
+			log.Println("✅ Background worker started")
+		}
 	}
 
 	fmt.Printf("🚀 ReboloLang server starting on port %s\n", port)
@@ -158,8 +175,35 @@ func (a *Application) ServeStatic(prefix, dir string) {
 	a.router.PathPrefix(prefix).Handler(http.StripPrefix(prefix, fs))
 }
 
+// Resource registers a RESTful resource using the old Controller interface
 func (a *Application) Resource(path string, controller core.Controller) {
 	a.router.Resource(path, controller)
+}
+
+// ResourceWithContext registers a RESTful resource using the new Resource interface with Context
+func (a *Application) ResourceWithContext(path string, res resource.Resource) {
+	base := path
+
+	// Convert Resource methods to http.HandlerFunc using ContextMiddleware
+	a.GET(base, a.ContextMiddleware(func(ctx *rebolocontext.Context) error {
+		return res.List(ctx)
+	}))
+
+	a.GET(base+"/{id}", a.ContextMiddleware(func(ctx *rebolocontext.Context) error {
+		return res.Show(ctx)
+	}))
+
+	a.POST(base, a.ContextMiddleware(func(ctx *rebolocontext.Context) error {
+		return res.Create(ctx)
+	}))
+
+	a.PUT(base+"/{id}", a.ContextMiddleware(func(ctx *rebolocontext.Context) error {
+		return res.Update(ctx)
+	}))
+
+	a.DELETE(base+"/{id}", a.ContextMiddleware(func(ctx *rebolocontext.Context) error {
+		return res.Destroy(ctx)
+	}))
 }
 
 // createRenderer creates a new HTML renderer (used for hot reload)
@@ -229,6 +273,9 @@ func (a *Application) SetSessionStore(store *session.SessionStore) {
 func (a *Application) Shutdown() {
 	if a.watcher != nil {
 		a.watcher.Close()
+	}
+	if a.worker != nil {
+		a.worker.Stop()
 	}
 	if a.cancelFunc != nil {
 		a.cancelFunc()
@@ -394,4 +441,38 @@ func (a *Application) MethodNotAllowedHandler() http.HandlerFunc {
 func (a *Application) InternalErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 	log.Printf("❌ Internal Server Error: %v", err)
 	a.HandleError(w, r, err, 500)
+}
+
+// Worker methods
+
+// RegisterWorker registers a handler for background jobs
+func (a *Application) RegisterWorker(name string, handler worker.Handler) error {
+	if a.worker == nil {
+		return fmt.Errorf("worker not initialized")
+	}
+	return a.worker.Register(name, handler)
+}
+
+// Perform enqueues a job to be performed as soon as possible
+func (a *Application) Perform(job worker.Job) error {
+	if a.worker == nil {
+		return fmt.Errorf("worker not initialized")
+	}
+	return a.worker.Perform(job)
+}
+
+// PerformAt enqueues a job to be performed at a specific time
+func (a *Application) PerformAt(job worker.Job, t time.Time) error {
+	if a.worker == nil {
+		return fmt.Errorf("worker not initialized")
+	}
+	return a.worker.PerformAt(job, t)
+}
+
+// PerformIn enqueues a job to be performed after a duration
+func (a *Application) PerformIn(job worker.Job, d time.Duration) error {
+	if a.worker == nil {
+		return fmt.Errorf("worker not initialized")
+	}
+	return a.worker.PerformIn(job, d)
 }
